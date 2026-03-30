@@ -111,7 +111,10 @@ export default function ScheduleBoard() {
     } else {
       const { data, error } = await supabase
         .from("worker_assignments")
-        .insert({ user_id: uid, project_id: projectId, datum, created_by: userId, notizen: notizen ?? null })
+        .upsert(
+          { user_id: uid, project_id: projectId, datum, created_by: userId, notizen: notizen ?? null },
+          { onConflict: "user_id,project_id,datum" }
+        )
         .select()
         .single();
       if (error) {

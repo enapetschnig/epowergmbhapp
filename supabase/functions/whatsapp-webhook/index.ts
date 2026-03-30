@@ -41,10 +41,35 @@ async function sendWhatsApp(to: string, message: string) {
 }
 
 async function downloadMedia(mediaUrl: string): Promise<ArrayBuffer> {
-  const res = await fetch(mediaUrl, {
+  console.log("Downloading media from:", mediaUrl);
+
+  // If it's a WAPI media ID (not a URL), fetch via WAPI media endpoint
+  if (!mediaUrl.startsWith("http")) {
+    const apiUrl = `${WAPI_BASE}/media/${mediaUrl}`;
+    const res = await fetch(apiUrl, {
+      headers: { Authorization: `Bearer ${WAPI_TOKEN}` },
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`WAPI media download failed (${res.status}): ${errText}`);
+    }
+    return res.arrayBuffer();
+  }
+
+  // Direct URL download - try with and without auth
+  let res = await fetch(mediaUrl, {
     headers: { Authorization: `Bearer ${WAPI_TOKEN}` },
   });
-  if (!res.ok) throw new Error(`Media download failed: ${res.status}`);
+
+  if (!res.ok) {
+    // Retry without auth (some WAPI URLs are public)
+    res = await fetch(mediaUrl);
+  }
+
+  if (!res.ok) {
+    throw new Error(`Media download failed (${res.status}): ${mediaUrl}`);
+  }
+
   return res.arrayBuffer();
 }
 
@@ -328,18 +353,20 @@ async function executeTool(
       try {
         const buf = await downloadMedia(mediaUrl);
         const ts = Date.now();
-        const path = `whatsapp/${input.project_id}/${ts}.jpg`;
+        const fileName = `${input.project_id}/whatsapp_${ts}.jpg`;
 
+        // Upload to project-photos bucket (public, with INSERT policy)
         const { error: upErr } = await supabase.storage
-          .from("documents")
-          .upload(path, buf, { contentType: "image/jpeg", upsert: false });
+          .from("project-photos")
+          .upload(fileName, buf, { contentType: "image/jpeg", upsert: false });
         if (upErr) throw upErr;
 
         const { data: urlData } = supabase.storage
-          .from("documents")
-          .getPublicUrl(path);
+          .from("project-photos")
+          .getPublicUrl(fileName);
 
-        await supabase.from("documents").insert({
+        // Insert into documents table
+        const { error: docErr } = await supabase.from("documents").insert({
           name: `WhatsApp Foto – ${senderName} – ${new Date().toLocaleDateString("de-AT")}`,
           file_url: urlData.publicUrl,
           typ: "foto",
@@ -347,6 +374,7 @@ async function executeTool(
           project_id: input.project_id,
           user_id: userId,
         });
+        if (docErr) console.error("Doc insert error:", docErr);
 
         const { data: proj } = await supabase
           .from("projects")
@@ -356,6 +384,7 @@ async function executeTool(
 
         return `ERFOLG: Foto auf Projekt "${proj?.name}" hochgeladen.`;
       } catch (e: any) {
+        console.error("Photo upload full error:", e);
         return `FEHLER: ${e.message}`;
       }
     }
@@ -534,8 +563,9 @@ function parseWapiPayload(payload: any): ParsedMsg[] {
     if (m.type === "text" || (!m.type && m.text)) {
       parsed.body = m.text?.body || m.body || m.text;
     } else if (m.type === "image") {
-      parsed.mediaUrl = m.image?.link || m.image?.url;
+      parsed.mediaUrl = m.image?.link || m.image?.url || m.image?.id;
       parsed.caption = m.image?.caption;
+      console.log("Image payload:", JSON.stringify(m.image));
     } else if (m.type === "document") {
       parsed.caption = m.document?.filename || m.document?.caption;
     } else if (m.type === "voice" || m.type === "audio" || m.type === "ptt") {
