@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -68,6 +69,7 @@ interface Employee {
   schuhgroesse: string | null;
   notizen: string | null;
   land: string | null;
+  whatsapp_aktiv: boolean | null;
 }
 
 export default function Admin() {
@@ -1055,6 +1057,16 @@ export default function Admin() {
                           type="tel"
                           value={formData.telefon || ""}
                           onChange={(e) => setFormData({ ...formData, telefon: e.target.value })}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg border p-3">
+                        <div>
+                          <Label className="font-medium">WhatsApp freigeschalten</Label>
+                          <p className="text-xs text-muted-foreground">Mitarbeiter kann den WhatsApp-Bot nutzen</p>
+                        </div>
+                        <Switch
+                          checked={formData.whatsapp_aktiv || false}
+                          onCheckedChange={(c) => setFormData({ ...formData, whatsapp_aktiv: c })}
                         />
                       </div>
                       <div>

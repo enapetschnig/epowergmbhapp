@@ -140,9 +140,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const today = new Date().toISOString().split("T")[0];
 
+    // Only send to admin-verified WhatsApp numbers
     const { data: employees } = await supabase
       .from("employees")
       .select("id, vorname, nachname, telefon, user_id")
+      .eq("whatsapp_aktiv", true)
       .not("telefon", "is", null)
       .not("user_id", "is", null);
 

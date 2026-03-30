@@ -59,7 +59,7 @@ async function findEmployeeByPhone(phone: string) {
 
   const { data } = await supabase
     .from("employees")
-    .select("id, vorname, nachname, user_id, telefon")
+    .select("id, vorname, nachname, user_id, telefon, whatsapp_aktiv")
     .or(`telefon.ilike.%${last8}%`)
     .limit(1)
     .maybeSingle();
@@ -580,10 +580,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
       console.log(`WhatsApp von ${phone}: ${msg.body || msg.caption || `[${msg.type}]`}`);
 
       const emp = await findEmployeeByPhone(phone);
+
+      // Unknown number → ignore silently (no response)
       if (!emp || !emp.user_id) {
+        console.log(`Unbekannte Nummer ${phone} – keine Antwort`);
+        continue;
+      }
+
+      // Known employee but NOT verified by admin → polite rejection
+      if (!emp.whatsapp_aktiv) {
+        console.log(`${emp.vorname} ${emp.nachname} nicht freigeschaltet`);
         await sendWhatsApp(
           phone,
-          "Hallo! 👋 Deine Telefonnummer ist nicht in der eBauer GmbH App hinterlegt. Bitte wende dich an deinen Vorgesetzten."
+          `Hallo ${emp.vorname}! Dein WhatsApp-Zugang wurde noch nicht vom Admin freigeschaltet. Bitte wende dich an deinen Vorgesetzten.`
         );
         continue;
       }
