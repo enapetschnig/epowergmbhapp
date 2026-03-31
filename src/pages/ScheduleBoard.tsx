@@ -139,11 +139,17 @@ export default function ScheduleBoard() {
 
     // Sync to Google Calendar (fire and forget)
     if (assignmentId) {
-      fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-assignment-to-calendar`, {
+      const sbUrl = "https://xyhgckqxowqnzjtoblfs.supabase.co";
+      fetch(`${sbUrl}/functions/v1/sync-assignment-to-calendar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "sync", assignment_id: assignmentId }),
-      }).catch((e) => console.error("Calendar sync failed:", e));
+      }).then(async (res) => {
+        if (!res.ok) {
+          const errText = await res.text().catch(() => "");
+          toast({ variant: "destructive", title: "Kalender-Sync fehlgeschlagen", description: errText.slice(0, 200) });
+        }
+      }).catch(() => {});
     }
   };
 
@@ -152,7 +158,8 @@ export default function ScheduleBoard() {
     if (!existing) return;
 
     // Delete from Google Calendar first (fire and forget)
-    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-assignment-to-calendar`, {
+    const sbUrl = (supabase as any).supabaseUrl || import.meta.env.VITE_SUPABASE_URL || "https://xyhgckqxowqnzjtoblfs.supabase.co";
+    fetch(`${sbUrl}/functions/v1/sync-assignment-to-calendar`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "delete", assignment_id: existing.id }),
