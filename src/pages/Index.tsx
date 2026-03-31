@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, Zap, CalendarDays, MessageCircle } from "lucide-react";
+import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, Zap, CalendarDays, MessageCircle, MapPin, StickyNote } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useOnboarding } from "@/contexts/OnboardingContext";
 import { WhatsAppStatus } from "@/components/WhatsAppStatus";
@@ -48,6 +48,7 @@ export default function Index() {
   const [userName, setUserName] = useState<string>("");
   const [projects, setProjects] = useState<Project[]>([]);
   const [recentEntries, setRecentEntries] = useState<RecentTimeEntry[]>([]);
+  const [assignments, setAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isActivated, setIsActivated] = useState<boolean | null>(null);
   const { handleRestartInstallGuide } = useOnboarding();
@@ -83,6 +84,31 @@ export default function Index() {
     }
   };
 
+  const fetchAssignments = async (userId: string) => {
+    const today = new Date();
+    const todayStr = today.toISOString().split("T")[0];
+    // Also fetch tomorrow
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split("T")[0];
+    // And day after
+    const dayAfter = new Date(today);
+    dayAfter.setDate(dayAfter.getDate() + 2);
+    const dayAfterStr = dayAfter.toISOString().split("T")[0];
+
+    const { data } = await supabase
+      .from("worker_assignments")
+      .select("id, datum, notizen, project_id, projects(name)")
+      .eq("user_id", userId)
+      .gte("datum", todayStr)
+      .lte("datum", dayAfterStr)
+      .order("datum", { ascending: true });
+
+    if (data) {
+      setAssignments(data as any);
+    }
+  };
+
   const loadForUser = async (userId: string) => {
     const profileReq = supabase
       .from("profiles")
@@ -115,6 +141,7 @@ export default function Index() {
     await Promise.all([
       fetchProjects(),
       fetchRecentEntries(userId, role),
+      fetchAssignments(userId),
     ]);
 
     setLoading(false);
@@ -183,11 +210,19 @@ export default function Index() {
       )
       .subscribe();
 
+    const assignmentsChannel = supabase
+      .channel("dashboard-assignments")
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_assignments" }, () => {
+        if (user) fetchAssignments(user.id);
+      })
+      .subscribe();
+
     return () => {
       isMounted = false;
       subscription.unsubscribe();
       supabase.removeChannel(projectsChannel);
       supabase.removeChannel(entriesChannel);
+      supabase.removeChannel(assignmentsChannel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
@@ -440,6 +475,69 @@ export default function Index() {
             </Card>
           )}
         </div>
+
+        {/* Plantafel Einteilung */}
+        {assignments.length > 0 && (
+          <div className="mt-6">
+            <h2 className="text-xl sm:text-2xl font-bold mb-4 flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-primary" />
+              Meine Einteilung
+            </h2>
+            <div className="space-y-2">
+              {(() => {
+                const today = new Date().toISOString().split("T")[0];
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const tomorrowStr = tomorrow.toISOString().split("T")[0];
+
+                const grouped: Record<string, typeof assignments> = {};
+                assignments.forEach((a) => {
+                  if (!grouped[a.datum]) grouped[a.datum] = [];
+                  grouped[a.datum].push(a);
+                });
+
+                return Object.entries(grouped).map(([datum, entries]) => {
+                  const isToday = datum === today;
+                  const isTomorrow = datum === tomorrowStr;
+                  const label = isToday ? "Heute" : isTomorrow ? "Morgen" : new Date(datum).toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" });
+
+                  return (
+                    <Card key={datum} className={isToday ? "border-primary/50 bg-primary/5" : ""}>
+                      <CardContent className="p-3 sm:p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`text-sm font-bold ${isToday ? "text-primary" : "text-muted-foreground"}`}>
+                            {label}
+                          </span>
+                          {isToday && (
+                            <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
+                              Heute
+                            </span>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          {entries.map((a: any) => (
+                            <div key={a.id} className="flex items-start gap-2">
+                              <MapPin className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-sm">{a.projects?.name || "Unbekanntes Projekt"}</p>
+                                {a.notizen && (
+                                  <div className="flex items-start gap-1 mt-0.5">
+                                    <StickyNote className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+                                    <p className="text-xs text-muted-foreground">{a.notizen}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        )}
 
         {/* Recent Time Entries */}
         {recentEntries.length > 0 && (
