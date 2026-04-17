@@ -258,12 +258,12 @@ export default function Index() {
       <header className="border-b bg-card sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4">
           <div className="flex justify-between items-center gap-3">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <img src="/epower-logo.png" alt="ePower GmbH" className="h-8 sm:h-10 w-auto" />
-              <div className="hidden sm:block h-8 w-px bg-border" />
-              <div className="flex flex-col">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <img src="/epower-logo.png" alt="ePower GmbH" className="h-8 sm:h-10 w-auto shrink-0" />
+              <div className="hidden sm:block h-8 w-px bg-border shrink-0" />
+              <div className="flex flex-col min-w-0">
                 <span className="text-xs sm:text-sm text-muted-foreground">Hallo</span>
-                <span className="text-sm sm:text-base font-semibold">{userName || "Benutzer"}</span>
+                <span className="text-sm sm:text-base font-semibold truncate">{userName || "Benutzer"}</span>
               </div>
             </div>
             <div className="flex items-center gap-2">
