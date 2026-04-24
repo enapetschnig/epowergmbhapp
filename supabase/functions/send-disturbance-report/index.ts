@@ -97,272 +97,283 @@ async function fetchImageAsBase64(url: string): Promise<string | null> {
 
 async function generatePDF(data: ReportRequest & { technicians: string[] }, photoImages: (string | null)[]): Promise<string> {
   const { disturbance, materials, technicians, photos } = data;
-  
-  // Create PDF document
-  const doc = new jsPDF({
-    orientation: "portrait",
-    unit: "mm",
-    format: "a4",
-  });
 
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 20;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 18;
   const contentWidth = pageWidth - 2 * margin;
-  let yPos = margin;
 
-  // Header - Logo
-  try {
-    doc.addImage(EBAUER_LOGO, "PNG", margin, yPos, 40, 20);
-    yPos += 25;
-  } catch (e) {
-    // Fallback to text if image fails
-    doc.setFontSize(24);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(30, 64, 175);
-    doc.text("ePOWER GMBH", margin, yPos);
-    yPos += 8;
-  }
+  // Design tokens
+  const ACCENT: [number, number, number] = [30, 58, 95];       // dark slate blue
+  const TEXT: [number, number, number] = [30, 30, 30];
+  const MUTED: [number, number, number] = [110, 110, 115];
+  const DIVIDER: [number, number, number] = [220, 220, 225];
+  const ROW_ALT: [number, number, number] = [248, 249, 250];
 
-  // Subtitle
-  doc.setFontSize(16);
-  doc.setTextColor(100, 100, 100);
-  doc.text("Regiebericht", margin, yPos);
-  yPos += 15;
+  // Logo dimensions (PNG is 1000x138 → ratio 7.246)
+  const LOGO_W = 46;
+  const LOGO_H = LOGO_W / 7.246;
 
-  // Reset text color
-  doc.setTextColor(0, 0, 0);
+  const reportId = disturbance.id.slice(0, 8).toUpperCase();
+  const createdStr = new Date().toLocaleDateString("de-AT");
 
-  // Customer Information Section
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text("Kundendaten", margin, yPos);
-  yPos += 7;
+  const drawHeader = () => {
+    // Top accent bar
+    doc.setFillColor(...ACCENT);
+    doc.rect(0, 0, pageWidth, 3, "F");
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  
-  doc.text(`Name: ${disturbance.kunde_name}`, margin, yPos);
-  yPos += 5;
-
-  if (disturbance.kunde_adresse) {
-    doc.text(`Adresse: ${disturbance.kunde_adresse}`, margin, yPos);
-    yPos += 5;
-  }
-
-  if (disturbance.kunde_telefon) {
-    doc.text(`Telefon: ${disturbance.kunde_telefon}`, margin, yPos);
-    yPos += 5;
-  }
-
-  if (disturbance.kunde_email) {
-    doc.text(`E-Mail: ${disturbance.kunde_email}`, margin, yPos);
-    yPos += 5;
-  }
-
-  yPos += 10;
-
-  // Work Information Section
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text("Einsatzdaten", margin, yPos);
-  yPos += 7;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-
-  doc.text(`Datum: ${formatDate(disturbance.datum)}`, margin, yPos);
-  yPos += 5;
-
-  const startTime = disturbance.start_time.slice(0, 5);
-  const endTime = disturbance.end_time.slice(0, 5);
-  doc.text(`Arbeitszeit: ${startTime} - ${endTime} Uhr`, margin, yPos);
-  yPos += 5;
-
-  if (disturbance.pause_minutes > 0) {
-    doc.text(`Pause: ${disturbance.pause_minutes} Minuten`, margin, yPos);
-    yPos += 5;
-  }
-
-  doc.setFont("helvetica", "bold");
-  doc.text(`Gesamtstunden: ${disturbance.stunden.toFixed(2)} Stunden`, margin, yPos);
-  doc.setFont("helvetica", "normal");
-  yPos += 5;
-
-  // Display technicians
-  if (technicians.length === 1) {
-    doc.text(`Techniker: ${technicians[0]}`, margin, yPos);
-    yPos += 5;
-  } else if (technicians.length > 1) {
-    doc.text("Techniker:", margin, yPos);
-    yPos += 5;
-    technicians.forEach((name) => {
-      doc.text(`  - ${name}`, margin, yPos);
-      yPos += 5;
-    });
-  }
-  yPos += 7;
-
-  // Work Description Section
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text("Durchgeführte Arbeiten", margin, yPos);
-  yPos += 7;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-
-  // Split long text into lines
-  const beschreibungLines = doc.splitTextToSize(disturbance.beschreibung, contentWidth);
-  doc.text(beschreibungLines, margin, yPos);
-  yPos += beschreibungLines.length * 5 + 5;
-
-  // Notes Section (if present)
-  if (disturbance.notizen) {
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Notizen", margin, yPos);
-    yPos += 7;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    const notizenLines = doc.splitTextToSize(disturbance.notizen, contentWidth);
-    doc.text(notizenLines, margin, yPos);
-    yPos += notizenLines.length * 5 + 5;
-  }
-
-  yPos += 5;
-
-  // Materials Section (if present)
-  if (materials && materials.length > 0) {
-    // Check if we need a new page
-    if (yPos > 220) {
-      doc.addPage();
-      yPos = margin;
+    // Logo
+    try {
+      doc.addImage(EBAUER_LOGO, "PNG", margin, margin - 2, LOGO_W, LOGO_H);
+    } catch {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.setTextColor(...ACCENT);
+      doc.text("ePOWER GMBH", margin, margin + 4);
     }
 
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Verwendetes Material", margin, yPos);
-    yPos += 7;
-
-    // Table header
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
-    doc.setFillColor(240, 240, 240);
-    doc.rect(margin, yPos - 4, contentWidth, 7, "F");
-    doc.text("Material", margin + 2, yPos);
-    doc.text("Menge", margin + 90, yPos);
-    doc.text("Notizen", margin + 120, yPos);
-    yPos += 6;
-
+    // Meta (right side)
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFontSize(8);
+    doc.setTextColor(...MUTED);
+    doc.text(`Bericht-Nr. ${reportId}`, pageWidth - margin, margin, { align: "right" });
+    doc.text(`Erstellt am ${createdStr}`, pageWidth - margin, margin + 4, { align: "right" });
+  };
 
-    materials.forEach((mat) => {
-      if (yPos > 270) {
-        doc.addPage();
-        yPos = margin;
-      }
-      
-      // Draw row border
-      doc.setDrawColor(200, 200, 200);
-      doc.line(margin, yPos + 2, margin + contentWidth, yPos + 2);
-      
-      doc.text(mat.material || "-", margin + 2, yPos);
-      doc.text(mat.menge || "-", margin + 90, yPos);
-      doc.text(mat.notizen || "-", margin + 120, yPos);
-      yPos += 7;
-    });
+  const drawFooter = (pageNum: number, totalPages: number) => {
+    const y = pageHeight - 10;
+    doc.setDrawColor(...DIVIDER);
+    doc.setLineWidth(0.2);
+    doc.line(margin, y - 4, pageWidth - margin, y - 4);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...MUTED);
+    doc.text("ePower GmbH  ·  Regiebericht", margin, y);
+    doc.text(`Seite ${pageNum} von ${totalPages}`, pageWidth - margin, y, { align: "right" });
+  };
 
-    yPos += 8;
+  // Helpers
+  const setText = (size: number, style: "normal" | "bold" = "normal", color: [number, number, number] = TEXT) => {
+    doc.setFont("helvetica", style);
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+  };
+
+  const sectionHeader = (title: string, y: number): number => {
+    setText(10, "bold", ACCENT);
+    doc.text(title.toUpperCase(), margin, y);
+    doc.setDrawColor(...ACCENT);
+    doc.setLineWidth(0.4);
+    doc.line(margin, y + 1.8, pageWidth - margin, y + 1.8);
+    return y + 7;
+  };
+
+  const labelValue = (label: string, value: string, x: number, y: number, maxW: number): number => {
+    setText(8, "normal", MUTED);
+    doc.text(label.toUpperCase(), x, y);
+    setText(10, "normal", TEXT);
+    const lines = doc.splitTextToSize(value, maxW);
+    doc.text(lines, x, y + 4.5);
+    return y + 4.5 + lines.length * 4.5 + 2;
+  };
+
+  const ensureSpace = (needed: number, yPos: number): number => {
+    if (yPos + needed > pageHeight - 20) {
+      doc.addPage();
+      drawHeader();
+      return margin + LOGO_H + 8;
+    }
+    return yPos;
+  };
+
+  // ==== Page 1 ====
+  drawHeader();
+  let yPos = margin + LOGO_H + 6;
+
+  // Title
+  setText(22, "bold", TEXT);
+  doc.text("Regiebericht", margin, yPos + 4);
+  setText(10, "normal", MUTED);
+  doc.text(formatDate(disturbance.datum), margin, yPos + 10);
+  yPos += 18;
+
+  // Two-column: Kunde / Einsatz
+  yPos = sectionHeader("Kunde & Einsatz", yPos);
+  const colGap = 8;
+  const colW = (contentWidth - colGap) / 2;
+  const leftX = margin;
+  const rightX = margin + colW + colGap;
+  let leftY = yPos;
+  let rightY = yPos;
+
+  // Left: Customer
+  leftY = labelValue("Kundenname", disturbance.kunde_name || "-", leftX, leftY, colW);
+  if (disturbance.kunde_adresse) leftY = labelValue("Adresse", disturbance.kunde_adresse, leftX, leftY, colW);
+  if (disturbance.kunde_telefon) leftY = labelValue("Telefon", disturbance.kunde_telefon, leftX, leftY, colW);
+  if (disturbance.kunde_email) leftY = labelValue("E-Mail", disturbance.kunde_email, leftX, leftY, colW);
+
+  // Right: Work data
+  const startTime = disturbance.start_time.slice(0, 5);
+  const endTime = disturbance.end_time.slice(0, 5);
+  rightY = labelValue("Datum", formatDate(disturbance.datum), rightX, rightY, colW);
+  rightY = labelValue("Arbeitszeit", `${startTime} – ${endTime} Uhr`, rightX, rightY, colW);
+  if (disturbance.pause_minutes > 0) rightY = labelValue("Pause", `${disturbance.pause_minutes} Minuten`, rightX, rightY, colW);
+  rightY = labelValue("Gesamtstunden", `${disturbance.stunden.toFixed(2)} h`, rightX, rightY, colW);
+  const techLabel = technicians.length === 1 ? "Techniker" : "Techniker";
+  const techValue = technicians.length > 0 ? technicians.join(", ") : "-";
+  rightY = labelValue(techLabel, techValue, rightX, rightY, colW);
+
+  yPos = Math.max(leftY, rightY) + 4;
+
+  // Durchgeführte Arbeiten
+  yPos = ensureSpace(30, yPos);
+  yPos = sectionHeader("Durchgeführte Arbeiten", yPos);
+  setText(10, "normal", TEXT);
+  const beschreibungLines = doc.splitTextToSize(disturbance.beschreibung || "-", contentWidth);
+  doc.text(beschreibungLines, margin, yPos);
+  yPos += beschreibungLines.length * 4.8 + 6;
+
+  // Notizen
+  if (disturbance.notizen) {
+    yPos = ensureSpace(25, yPos);
+    yPos = sectionHeader("Notizen", yPos);
+    setText(10, "normal", TEXT);
+    const notizenLines = doc.splitTextToSize(disturbance.notizen, contentWidth);
+    doc.text(notizenLines, margin, yPos);
+    yPos += notizenLines.length * 4.8 + 6;
   }
 
-  // Photos Section (if present)
-  if (photos && photos.length > 0 && photoImages.some(img => img !== null)) {
-    // Start new page for photos
+  // Materialien
+  if (materials && materials.length > 0) {
+    yPos = ensureSpace(20 + materials.length * 6, yPos);
+    yPos = sectionHeader("Verwendetes Material", yPos);
+
+    // Table columns: Material (flex), Menge (30mm), Notizen (55mm)
+    const colMenge = 30;
+    const colNotiz = 55;
+    const colMat = contentWidth - colMenge - colNotiz;
+    const matX = margin;
+    const mengeX = margin + colMat;
+    const notizX = margin + colMat + colMenge;
+
+    // Header row
+    setText(8, "bold", MUTED);
+    doc.text("MATERIAL", matX, yPos);
+    doc.text("MENGE", mengeX, yPos);
+    doc.text("NOTIZEN", notizX, yPos);
+    yPos += 2;
+    doc.setDrawColor(...ACCENT);
+    doc.setLineWidth(0.3);
+    doc.line(margin, yPos, pageWidth - margin, yPos);
+    yPos += 3;
+
+    setText(10, "normal", TEXT);
+    materials.forEach((mat, idx) => {
+      const matLines = doc.splitTextToSize(mat.material || "-", colMat - 2);
+      const notizLines = doc.splitTextToSize(mat.notizen || "", colNotiz - 2);
+      const rowHeight = Math.max(matLines.length, notizLines.length || 1) * 4.8 + 3;
+
+      if (yPos + rowHeight > pageHeight - 25) {
+        drawFooter(doc.getCurrentPageInfo().pageNumber, 0); // placeholder, re-drawn at end
+        doc.addPage();
+        drawHeader();
+        yPos = margin + LOGO_H + 8;
+        yPos = sectionHeader("Verwendetes Material (Forts.)", yPos);
+      }
+
+      if (idx % 2 === 1) {
+        doc.setFillColor(...ROW_ALT);
+        doc.rect(margin - 1, yPos - 3.5, contentWidth + 2, rowHeight, "F");
+      }
+
+      setText(10, "normal", TEXT);
+      doc.text(matLines, matX, yPos);
+      doc.text(mat.menge || "–", mengeX, yPos);
+      if (notizLines.length) doc.text(notizLines, notizX, yPos);
+      yPos += rowHeight;
+    });
+    yPos += 4;
+  }
+
+  // Fotos
+  if (photos && photos.length > 0 && photoImages.some((img) => img !== null)) {
     doc.addPage();
-    yPos = margin;
+    drawHeader();
+    yPos = margin + LOGO_H + 6;
+    yPos = sectionHeader("Fotos", yPos);
 
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(0, 0, 0);
-    doc.text("Fotos", margin, yPos);
-    yPos += 10;
+    const photoW = (contentWidth - 6) / 2;
+    const photoH = photoW * 0.72;
 
+    let col = 0;
     for (let i = 0; i < photos.length; i++) {
       const imageData = photoImages[i];
       if (!imageData) continue;
 
-      // Check if we need a new page
-      if (yPos > 200) {
+      if (col === 0 && yPos + photoH + 8 > pageHeight - 20) {
         doc.addPage();
-        yPos = margin;
+        drawHeader();
+        yPos = margin + LOGO_H + 6;
+        yPos = sectionHeader("Fotos (Forts.)", yPos);
       }
 
+      const x = margin + col * (photoW + 6);
       try {
-        // Add image with max width 80mm, proportional height ~60mm
-        doc.addImage(imageData, "JPEG", margin, yPos, 80, 60);
-        yPos += 65;
-
-        // Add filename below image
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
-        doc.setTextColor(100, 100, 100);
-        doc.text(photos[i].file_name, margin, yPos);
-        yPos += 8;
-        doc.setTextColor(0, 0, 0);
+        doc.addImage(imageData, "JPEG", x, yPos, photoW, photoH);
+        doc.setDrawColor(...DIVIDER);
+        doc.setLineWidth(0.2);
+        doc.rect(x, yPos, photoW, photoH);
       } catch (e) {
-        console.error("Error adding image to PDF:", e);
+        console.error("Error adding image:", e);
+      }
+
+      col++;
+      if (col >= 2) {
+        col = 0;
+        yPos += photoH + 8;
       }
     }
+    if (col > 0) yPos += photoH + 8;
   }
 
-  // Signature Section
-  // Check if we need a new page for signature
-  if (yPos > 200) {
-    doc.addPage();
-    yPos = margin;
-  }
+  // Unterschrift
+  yPos = ensureSpace(55, yPos);
+  yPos = sectionHeader("Kundenunterschrift", yPos);
 
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text("Kundenunterschrift", margin, yPos);
-  yPos += 5;
-
-  // Add signature image if present
   if (disturbance.unterschrift_kunde) {
     try {
-      // The signature is a base64 data URL
-      const signatureData = disturbance.unterschrift_kunde;
-      
-      // Add the signature image
-      doc.addImage(signatureData, "PNG", margin, yPos, 60, 25);
-      yPos += 30;
+      const sigW = 70;
+      const sigH = 28;
+      doc.addImage(disturbance.unterschrift_kunde, "PNG", margin, yPos, sigW, sigH);
+      // Signature line
+      doc.setDrawColor(...TEXT);
+      doc.setLineWidth(0.3);
+      doc.line(margin, yPos + sigH + 1, margin + sigW, yPos + sigH + 1);
+      setText(8, "normal", MUTED);
+      doc.text(`${disturbance.kunde_name}`, margin, yPos + sigH + 5);
+      doc.text(formatDateShort(disturbance.datum), margin + sigW, yPos + sigH + 5, { align: "right" });
+      yPos += sigH + 10;
     } catch (e) {
       console.error("Error adding signature:", e);
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(10);
-      doc.text("[Unterschrift konnte nicht geladen werden]", margin, yPos + 10);
-      yPos += 20;
+      setText(9, "italic", MUTED);
+      doc.text("[Unterschrift konnte nicht geladen werden]", margin, yPos);
+      yPos += 10;
     }
   }
 
-  // Confirmation text
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(100, 100, 100);
+  setText(8, "normal", MUTED);
   const confirmText = "Der Kunde bestätigt mit seiner Unterschrift die ordnungsgemäße Durchführung der oben genannten Arbeiten.";
   const confirmLines = doc.splitTextToSize(confirmText, contentWidth);
   doc.text(confirmLines, margin, yPos);
-  yPos += 15;
 
-  // Footer
-  doc.setFontSize(8);
-  doc.setTextColor(150, 150, 150);
-  const footerY = doc.internal.pageSize.getHeight() - 15;
-  doc.text(`Erstellt am: ${new Date().toLocaleDateString("de-AT")} | ePower GmbH`, margin, footerY);
+  // Draw footer on every page
+  const totalPages = doc.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    drawFooter(p, totalPages);
+  }
 
-  // Return as base64
   return doc.output("datauristring").split(",")[1];
 }
 
