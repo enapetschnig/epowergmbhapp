@@ -8,10 +8,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { AITextField } from "@/components/AITextField";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { MultiEmployeeSelect } from "@/components/MultiEmployeeSelect";
+
+type ProjectOption = {
+  id: string;
+  name: string;
+  plz: string | null;
+  adresse: string | null;
+  kunde_name: string | null;
+  kunde_email: string | null;
+  kunde_telefon: string | null;
+};
 
 type MaterialEntry = {
   id: string;
@@ -61,7 +72,7 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [materials, setMaterials] = useState<MaterialEntry[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [projects, setProjects] = useState<{ id: string; name: string; plz: string }[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
 
   useEffect(() => {
     fetchProjects();
@@ -70,10 +81,28 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
   const fetchProjects = async () => {
     const { data } = await supabase
       .from("projects")
-      .select("id, name, plz")
+      .select("id, name, plz, adresse, kunde_name, kunde_email, kunde_telefon")
       .eq("status", "aktiv")
       .order("name");
-    if (data) setProjects(data);
+    if (data) setProjects(data as ProjectOption[]);
+  };
+
+  const handleProjectChange = (val: string) => {
+    const projectId = val === "none" ? null : val;
+    setSelectedProjectId(projectId);
+    if (!projectId) return;
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) return;
+
+    const adresseCombined = [project.adresse, project.plz].filter(Boolean).join(", ");
+
+    setFormData((prev) => ({
+      ...prev,
+      kundeName: project.kunde_name?.trim() || prev.kundeName || project.name,
+      kundeEmail: project.kunde_email?.trim() || prev.kundeEmail,
+      kundeTelefon: project.kunde_telefon?.trim() || prev.kundeTelefon,
+      kundeAdresse: adresseCombined || prev.kundeAdresse,
+    }));
   };
 
   useEffect(() => {
@@ -428,6 +457,33 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
 
         <div className="flex-1 overflow-y-auto pr-1">
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Project Selection - At top for autofill */}
+          <div className="space-y-2">
+            <h3 className="font-medium flex items-center gap-2">
+              <FolderOpen className="h-4 w-4" />
+              Projekt auswählen (optional)
+            </h3>
+            <Select
+              value={selectedProjectId || "none"}
+              onValueChange={handleProjectChange}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Kein Projekt" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Kein Projekt</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}{p.plz ? ` (${p.plz})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Bei Auswahl werden die Kundendaten automatisch übernommen.
+            </p>
+          </div>
+
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-medium flex items-center gap-2">
@@ -544,16 +600,15 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
               Kundendaten
             </h3>
             <div className="space-y-3">
-              <div>
-                <Label htmlFor="kundeName">Kundenname *</Label>
-                <Input
-                  id="kundeName"
-                  value={formData.kundeName}
-                  onChange={(e) => setFormData({ ...formData, kundeName: e.target.value })}
-                  placeholder="Max Mustermann"
-                  required
-                />
-              </div>
+              <AITextField
+                id="kundeName"
+                label="Kundenname"
+                required
+                value={formData.kundeName}
+                onChange={(val) => setFormData({ ...formData, kundeName: val })}
+                placeholder="Max Mustermann"
+                aiContext="Regiebericht: Kundenname"
+              />
               <div>
                 <Label htmlFor="kundeEmail" className="flex items-center gap-1">
                   <Mail className="h-3 w-3" /> E-Mail (optional)
@@ -607,58 +662,34 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
             endTime={formData.endTime}
           />
 
-          {/* Project Assignment */}
-          <div className="space-y-4">
-            <h3 className="font-medium flex items-center gap-2">
-              <FolderOpen className="h-4 w-4" />
-              Projekt zuordnen (optional)
-            </h3>
-            <Select
-              value={selectedProjectId || "none"}
-              onValueChange={(val) => setSelectedProjectId(val === "none" ? null : val)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Kein Projekt" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Kein Projekt</SelectItem>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name} ({p.plz})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
           {/* Work Description Section */}
           <div className="space-y-4">
             <h3 className="font-medium flex items-center gap-2">
               <FileText className="h-4 w-4" />
               Arbeitsdetails
             </h3>
-            <div className="space-y-3">
-              <div>
-                <Label htmlFor="beschreibung">Durchgeführte Arbeit *</Label>
-                <Textarea
-                  id="beschreibung"
-                  value={formData.beschreibung}
-                  onChange={(e) => setFormData({ ...formData, beschreibung: e.target.value })}
-                  placeholder="Beschreiben Sie die durchgeführten Arbeiten..."
-                  rows={4}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="notizen">Notizen (optional)</Label>
-                <Textarea
-                  id="notizen"
-                  value={formData.notizen}
-                  onChange={(e) => setFormData({ ...formData, notizen: e.target.value })}
-                  placeholder="Zusätzliche Bemerkungen..."
-                  rows={2}
-                />
-              </div>
+            <div className="space-y-4">
+              <AITextField
+                id="beschreibung"
+                label="Durchgeführte Arbeit"
+                required
+                multiline
+                minHeight="min-h-24"
+                value={formData.beschreibung}
+                onChange={(val) => setFormData({ ...formData, beschreibung: val })}
+                placeholder="Beschreiben Sie die durchgeführten Arbeiten..."
+                aiContext="Regiebericht: Arbeitsbeschreibung"
+              />
+              <AITextField
+                id="notizen"
+                label="Notizen (optional)"
+                multiline
+                minHeight="min-h-20"
+                value={formData.notizen}
+                onChange={(val) => setFormData({ ...formData, notizen: val })}
+                placeholder="Zusätzliche Bemerkungen..."
+                aiContext="Regiebericht: Notizen"
+              />
             </div>
           </div>
 

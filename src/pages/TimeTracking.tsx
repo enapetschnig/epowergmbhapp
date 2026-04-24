@@ -271,6 +271,11 @@ const TimeTracking = () => {
     return timeBlocks.reduce((sum, block) => sum + calculateBlockHours(block), 0).toFixed(2);
   };
 
+  const allBlocksValid = timeBlocks.every((block) => {
+    const hours = calculateBlockHours(block);
+    return hours > 0 && block.startTime && block.endTime;
+  });
+
   const applyFullDayPreset = () => {
     if (!timeBlocks.length) return;
 
@@ -606,18 +611,37 @@ const TimeTracking = () => {
             week_type: null,
           }));
 
-      const { data: result, error: functionError } = await supabase.functions.invoke("create-team-time-entries", {
-        body: {
-          mainEntry,
-          teamEntries,
-          disturbanceIds: [],
-          createWorkerLinks: true,
-        },
-      });
+      let result: any = null;
+      let functionError: any = null;
+
+      try {
+        const response = await supabase.functions.invoke("create-team-time-entries", {
+          body: {
+            mainEntry,
+            teamEntries,
+            disturbanceIds: [],
+            createWorkerLinks: true,
+          },
+        });
+        result = response.data;
+        functionError = response.error;
+
+        // Bei FunctionsHttpError den Body auslesen
+        if (functionError && functionError.context instanceof Response) {
+          try {
+            const errorBody = await functionError.context.json();
+            functionError = { ...functionError, detail: errorBody };
+          } catch {}
+        }
+      } catch (invokeError: any) {
+        functionError = invokeError;
+      }
 
       if (functionError || !result?.success) {
         hasError = true;
-        console.error("Error creating time entries:", functionError || result?.error);
+        const errorDetail = functionError?.detail?.error || functionError?.message || result?.error || "Unbekannter Fehler";
+        console.error("Error creating time entries:", { functionError, result, mainEntry, teamEntries });
+        toast({ variant: "destructive", title: "Fehler beim Speichern", description: String(errorDetail) });
         continue;
       }
 
@@ -630,8 +654,6 @@ const TimeTracking = () => {
         : "";
       toast({ title: "Erfolg", description: `${totalEntriesCreated} Eintrag/Einträge gespeichert${teamInfo}` });
       await fetchExistingDayEntries(selectedDate);
-    } else {
-      toast({ variant: "destructive", title: "Fehler", description: "Einige Einträge konnten nicht gespeichert werden" });
     }
 
     setSaving(false);
@@ -787,12 +809,13 @@ const TimeTracking = () => {
                         </div>
 
                         <div className="space-y-2">
-                          <Label>Stunden</Label>
+                          <Label>Stunden <span className="text-destructive">*</span></Label>
                           <Input
                             type="number"
                             step="0.25"
                             min="0.25"
                             max="12"
+                            required
                             value={block.directHours}
                             onChange={(e) => updateBlock(block.id, { directHours: e.target.value })}
                             placeholder="z.B. 8.5"
@@ -821,7 +844,7 @@ const TimeTracking = () => {
 
                   <Button type="button" variant="outline" onClick={addTimeBlock} className="w-full gap-2 border-dashed"><Plus className="w-4 h-4" />Weitere Stunden hinzufügen</Button>
                   <div className="bg-primary/10 border border-primary/30 rounded-lg p-4 flex items-center justify-between"><span className="font-medium">Gesamt zu buchen</span><span className="text-2xl font-bold">{calculateTotalHours()} h</span></div>
-                  <Button type="submit" className="w-full" disabled={saving}>{saving ? "Wird gespeichert..." : `${timeBlocks.length > 1 ? "Alle Einträge" : "Stunden"} erfassen`}</Button>
+                  <Button type="submit" className="w-full" disabled={saving || !allBlocksValid}>{saving ? "Wird gespeichert..." : !allBlocksValid ? "Bitte Stunden eingeben" : `${timeBlocks.length > 1 ? "Alle Einträge" : "Stunden"} erfassen`}</Button>
                 </>
               )}
             </form>

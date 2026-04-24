@@ -30,13 +30,10 @@ interface TeamTimeEntriesRequest {
   skipMainEntry?: boolean;
 }
 
-interface TeamTimeEntriesResponse {
-  success: boolean;
-  mainEntryId?: string;
-  teamEntryIds?: string[];
-  totalCreated?: number;
-  error?: string;
-}
+const jsonResponse = (body: Record<string, unknown>) =>
+  new Response(JSON.stringify(body), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 
 const createDisturbanceLinks = async (
   supabaseAdmin: ReturnType<typeof createClient>,
@@ -67,10 +64,7 @@ Deno.serve(async (req: Request) => {
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: false, error: "Kein Auth-Header vorhanden" });
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -82,16 +76,13 @@ Deno.serve(async (req: Request) => {
     });
 
     const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabaseUser.auth.getClaims(token);
+    const { data: { user }, error: userError } = await supabaseUser.auth.getUser(token);
 
-    if (claimsError || !claimsData?.claims) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (userError || !user) {
+      return jsonResponse({ success: false, error: `Auth fehlgeschlagen: ${userError?.message || "Kein User"}` });
     }
 
-    const userId = claimsData.claims.sub;
+    const userId = user.id;
     const {
       mainEntry,
       teamEntries,
@@ -100,11 +91,10 @@ Deno.serve(async (req: Request) => {
       skipMainEntry = false,
     }: TeamTimeEntriesRequest = await req.json();
 
+    console.log("Request:", JSON.stringify({ userId, mainEntry: { ...mainEntry, user_id: mainEntry.user_id }, teamEntriesCount: teamEntries.length }));
+
     if (mainEntry.user_id !== userId) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Main entry must belong to authenticated user" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: false, error: `User-ID stimmt nicht überein (auth: ${userId}, entry: ${mainEntry.user_id})` });
     }
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
@@ -117,21 +107,14 @@ Deno.serve(async (req: Request) => {
         .in("id", teamUserIds);
 
       if (profilesError) {
-        console.error("Error fetching profiles:", profilesError);
-        return new Response(
-          JSON.stringify({ success: false, error: "Failed to validate team members" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return jsonResponse({ success: false, error: `Team-Validierung fehlgeschlagen: ${profilesError.message}` });
       }
 
-      const activeIds = new Set(profiles?.filter((profile) => profile.is_active).map((profile) => profile.id) || []);
+      const activeIds = new Set(profiles?.filter((profile: any) => profile.is_active).map((profile: any) => profile.id) || []);
       const invalidIds = teamUserIds.filter((id) => !activeIds.has(id));
 
       if (invalidIds.length > 0) {
-        return new Response(
-          JSON.stringify({ success: false, error: `Invalid or inactive team members: ${invalidIds.length}` }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return jsonResponse({ success: false, error: `${invalidIds.length} Team-Mitglieder sind inaktiv oder ungültig` });
       }
     }
 
@@ -139,33 +122,34 @@ Deno.serve(async (req: Request) => {
     let totalCreated = 0;
 
     if (!skipMainEntry) {
+      const insertData = {
+        user_id: mainEntry.user_id,
+        datum: mainEntry.datum,
+        project_id: mainEntry.project_id || null,
+        disturbance_id: mainEntry.disturbance_id || null,
+        taetigkeit: mainEntry.taetigkeit || "",
+        stunden: mainEntry.stunden,
+        start_time: mainEntry.start_time,
+        end_time: mainEntry.end_time,
+        pause_minutes: mainEntry.pause_minutes,
+        pause_start: mainEntry.pause_start || null,
+        pause_end: mainEntry.pause_end || null,
+        location_type: mainEntry.location_type,
+        notizen: mainEntry.notizen || null,
+        week_type: mainEntry.week_type || null,
+      };
+
+      console.log("Inserting main entry:", JSON.stringify(insertData));
+
       const { data: mainResult, error: mainError } = await supabaseAdmin
         .from("time_entries")
-        .insert({
-          user_id: mainEntry.user_id,
-          datum: mainEntry.datum,
-          project_id: mainEntry.project_id || null,
-          disturbance_id: mainEntry.disturbance_id || null,
-          taetigkeit: mainEntry.taetigkeit,
-          stunden: mainEntry.stunden,
-          start_time: mainEntry.start_time,
-          end_time: mainEntry.end_time,
-          pause_minutes: mainEntry.pause_minutes,
-          pause_start: mainEntry.pause_start || null,
-          pause_end: mainEntry.pause_end || null,
-          location_type: mainEntry.location_type,
-          notizen: mainEntry.notizen || null,
-          week_type: mainEntry.week_type || null,
-        })
+        .insert(insertData)
         .select()
         .single();
 
       if (mainError) {
-        console.error("Error inserting main entry:", mainError);
-        return new Response(
-          JSON.stringify({ success: false, error: `Failed to create main entry: ${mainError.message}` }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        console.error("Main entry error:", JSON.stringify(mainError));
+        return jsonResponse({ success: false, error: `DB-Fehler: ${mainError.message} (Code: ${mainError.code}, Details: ${mainError.details})` });
       }
 
       mainEntryResult = mainResult;
@@ -173,12 +157,8 @@ Deno.serve(async (req: Request) => {
 
       try {
         await createDisturbanceLinks(supabaseAdmin, mainResult.id, disturbanceIds);
-      } catch (linkError) {
-        console.error("Error creating disturbance links for main entry:", linkError);
-        return new Response(
-          JSON.stringify({ success: false, error: "Failed to link Regieberichte to main entry" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      } catch (linkError: any) {
+        return jsonResponse({ success: false, error: `Regiebericht-Verknüpfung fehlgeschlagen: ${linkError?.message || linkError}` });
       }
     }
 
@@ -192,7 +172,7 @@ Deno.serve(async (req: Request) => {
           datum: teamEntry.datum,
           project_id: teamEntry.project_id || null,
           disturbance_id: teamEntry.disturbance_id || null,
-          taetigkeit: teamEntry.taetigkeit,
+          taetigkeit: teamEntry.taetigkeit || "",
           stunden: teamEntry.stunden,
           start_time: teamEntry.start_time,
           end_time: teamEntry.end_time,
@@ -207,14 +187,14 @@ Deno.serve(async (req: Request) => {
         .single();
 
       if (teamError) {
-        console.error("Error inserting team entry:", teamError);
+        console.error("Team entry error:", JSON.stringify(teamError));
         continue;
       }
 
       try {
         await createDisturbanceLinks(supabaseAdmin, teamEntryResult.id, disturbanceIds);
       } catch (linkError) {
-        console.error("Error creating disturbance links for team entry:", linkError);
+        console.error("Disturbance link error:", linkError);
         continue;
       }
 
@@ -231,28 +211,21 @@ Deno.serve(async (req: Request) => {
           });
 
         if (linkError) {
-          console.error("Error creating worker link:", linkError);
+          console.error("Worker link error:", linkError);
         }
       }
     }
 
-    const response: TeamTimeEntriesResponse = {
+    console.log(`Created ${totalCreated} time entries`);
+
+    return jsonResponse({
       success: true,
       mainEntryId: mainEntryResult?.id || undefined,
       teamEntryIds,
       totalCreated,
-    };
-
-    console.log(`Created ${totalCreated} time entries (${mainEntryResult ? '1 main + ' : ''}${teamEntryIds.length} team members)`);
-
-    return new Response(JSON.stringify(response), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Unexpected error:", error);
-    return new Response(
-      JSON.stringify({ success: false, error: "Internal server error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return jsonResponse({ success: false, error: `Unerwarteter Fehler: ${error?.message || String(error)}` });
   }
 });

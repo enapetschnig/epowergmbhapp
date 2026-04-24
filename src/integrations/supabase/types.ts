@@ -501,6 +501,9 @@ export type Database = {
           beschreibung: string | null
           created_at: string
           id: string
+          kunde_email: string | null
+          kunde_name: string | null
+          kunde_telefon: string | null
           name: string
           plz: string
           status: string | null
@@ -511,6 +514,9 @@ export type Database = {
           beschreibung?: string | null
           created_at?: string
           id?: string
+          kunde_email?: string | null
+          kunde_name?: string | null
+          kunde_telefon?: string | null
           name: string
           plz: string
           status?: string | null
@@ -521,6 +527,9 @@ export type Database = {
           beschreibung?: string | null
           created_at?: string
           id?: string
+          kunde_email?: string | null
+          kunde_name?: string | null
+          kunde_telefon?: string | null
           name?: string
           plz?: string
           status?: string | null

@@ -24,6 +24,9 @@ type Project = {
   beschreibung: string | null;
   adresse: string | null;
   plz: string | null;
+  kunde_name: string | null;
+  kunde_email: string | null;
+  kunde_telefon: string | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -49,6 +52,9 @@ const Projects = () => {
     beschreibung: "",
     adresse: "",
     plz: "",
+    kunde_name: "",
+    kunde_email: "",
+    kunde_telefon: "",
   });
   const [quickUploadProject, setQuickUploadProject] = useState<{
     projectId: string;
@@ -166,6 +172,9 @@ const Projects = () => {
         beschreibung: newProject.beschreibung.trim() || null,
         adresse: newProject.adresse.trim() || null,
         plz: newProject.plz.trim(),
+        kunde_name: newProject.kunde_name.trim() || null,
+        kunde_email: newProject.kunde_email.trim() || null,
+        kunde_telefon: newProject.kunde_telefon.trim() || null,
       });
 
     if (error) {
@@ -179,7 +188,7 @@ const Projects = () => {
         title: "Erfolg",
         description: "Projekt wurde erstellt",
       });
-      setNewProject({ name: "", beschreibung: "", adresse: "", plz: "" });
+      setNewProject({ name: "", beschreibung: "", adresse: "", plz: "", kunde_name: "", kunde_email: "", kunde_telefon: "" });
       setShowNewDialog(false);
       fetchProjects();
     }
@@ -306,6 +315,9 @@ const Projects = () => {
         beschreibung: editProject.beschreibung?.trim() || null,
         adresse: editProject.adresse?.trim() || null,
         plz: editProject.plz.trim(),
+        kunde_name: editProject.kunde_name?.trim() || null,
+        kunde_email: editProject.kunde_email?.trim() || null,
+        kunde_telefon: editProject.kunde_telefon?.trim() || null,
       })
       .eq("id", editProject.id);
 
@@ -454,6 +466,35 @@ const Projects = () => {
                       onPlzFound={(plz) => setNewProject(prev => ({ ...prev, plz: plz }))}
                     />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="kunde_name">Kundenname</Label>
+                  <Input
+                    id="kunde_name"
+                    value={newProject.kunde_name}
+                    onChange={(e) => setNewProject({ ...newProject, kunde_name: e.target.value })}
+                    placeholder="z.B. Max Mustermann"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="kunde_email">E-Mail</Label>
+                  <Input
+                    id="kunde_email"
+                    type="email"
+                    value={newProject.kunde_email}
+                    onChange={(e) => setNewProject({ ...newProject, kunde_email: e.target.value })}
+                    placeholder="kunde@example.com"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="kunde_telefon">Telefon</Label>
+                  <Input
+                    id="kunde_telefon"
+                    type="tel"
+                    value={newProject.kunde_telefon}
+                    onChange={(e) => setNewProject({ ...newProject, kunde_telefon: e.target.value })}
+                    placeholder="+43 664 ..."
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="beschreibung">Beschreibung</Label>
@@ -882,6 +923,35 @@ const Projects = () => {
                   id="edit-adresse"
                   value={editProject.adresse || ''}
                   onChange={(e) => setEditProject({ ...editProject, adresse: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-kunde-name">Kundenname</Label>
+                <Input
+                  id="edit-kunde-name"
+                  value={editProject.kunde_name || ''}
+                  onChange={(e) => setEditProject({ ...editProject, kunde_name: e.target.value })}
+                  placeholder="z.B. Max Mustermann"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-kunde-email">E-Mail</Label>
+                <Input
+                  id="edit-kunde-email"
+                  type="email"
+                  value={editProject.kunde_email || ''}
+                  onChange={(e) => setEditProject({ ...editProject, kunde_email: e.target.value })}
+                  placeholder="kunde@example.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-kunde-telefon">Telefon</Label>
+                <Input
+                  id="edit-kunde-telefon"
+                  type="tel"
+                  value={editProject.kunde_telefon || ''}
+                  onChange={(e) => setEditProject({ ...editProject, kunde_telefon: e.target.value })}
+                  placeholder="+43 664 ..."
                 />
               </div>
               <div className="space-y-2">
